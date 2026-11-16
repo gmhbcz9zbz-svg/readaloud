@@ -307,7 +307,7 @@ async function handle(m){
       const MODEL='onnx-community/Kokoro-82M-v1.0-ONNX',prog=p=>self.postMessage({type:'progress',p});
       let dev='wasm';
       try{
-        if(self.navigator&&navigator.gpu&&await navigator.gpu.requestAdapter()){
+        if(m.gpu&&self.navigator&&navigator.gpu&&await navigator.gpu.requestAdapter()){
           self.postMessage({type:'note',text:'Setting up fast mode (first time only)…'});
           tts=await KokoroTTS.from_pretrained(MODEL,{dtype:'fp32',device:'webgpu',progress_callback:prog});
           await tts.generate('Ready.',{voice:'af_heart'});
@@ -330,21 +330,36 @@ async function handle(m){
 self.onmessage=e=>{const m=e.data;if(m.type==='epoch'){cur=m.n;return}q=q.then(()=>handle(m))};
 `;
 let W=null,wLoad=null,nid=1;const pending=new Map();
-function ensureModel(){
-  if(wLoad)return wLoad;
-  wLoad=new Promise((res,rej)=>{
+function loadWorker(gpu){
+  return new Promise((res,rej)=>{
     try{W=new Worker(URL.createObjectURL(new Blob([WORKER_SRC],{type:'text/javascript'})),{type:'module'})}catch(e){rej(e);return}
+    let beat=Date.now(),phase=gpu?'gpu':'cpu';
+    const watch=setInterval(()=>{                       // fast mode stuck for 25 s with no progress: give up on it
+      if(phase==='gpu'&&Date.now()-beat>25000){clearInterval(watch);rej({stall:true})}
+    },2000);
     W.onmessage=e=>{
       const m=e.data;
-      if(m.type==='note'){S.loadNote=m.text;status(m.text)}
-      else if(m.type==='progress'){const p=m.p;if(p&&p.status==='progress'&&typeof p.progress==='number'&&p.progress<100)status((S.loadNote||'Loading voice')+' '+Math.round(p.progress)+'%')}
-      else if(m.type==='ready'){S.device=m.device;$('segNeural').textContent='Natural voices'+(m.device==='webgpu'?' ⚡':'');status('');res()}
+      if(m.type==='note'){beat=Date.now();phase=/fast/i.test(m.text)?'gpu':'cpu';S.loadNote=m.text;status(m.text)}
+      else if(m.type==='progress'){beat=Date.now();const p=m.p;if(p&&p.status==='progress'&&typeof p.progress==='number'&&p.progress<100)status((S.loadNote||'Loading voice')+' '+Math.round(p.progress)+'%')}
+      else if(m.type==='ready'){clearInterval(watch);S.device=m.device;$('segNeural').textContent='Natural voices'+(m.device==='webgpu'?' ⚡':'');status('');res()}
       else if(m.type==='audio'){const p=pending.get(m.id);pending.delete(m.id);p&&p.res({audio:m.audio,sampling_rate:m.sr})}
       else if(m.type==='skip'){const p=pending.get(m.id);pending.delete(m.id);p&&p.rej({skipped:true})}
-      else if(m.type==='error'){if(m.id){const p=pending.get(m.id);pending.delete(m.id);p&&p.rej(new Error(m.msg))}else rej(new Error(m.msg))}
+      else if(m.type==='error'){if(m.id){const p=pending.get(m.id);pending.delete(m.id);p&&p.rej(new Error(m.msg))}else{clearInterval(watch);rej(new Error(m.msg))}}
     };
-    W.onerror=ev=>rej(new Error(ev.message||'Worker failed'));
-    W.postMessage({type:'load'});
+    W.onerror=ev=>{clearInterval(watch);rej(new Error(ev.message||'Worker failed'))};
+    W.postMessage({type:'load',gpu});
+  });
+}
+function ensureModel(){
+  if(wLoad)return wLoad;
+  const gpu=!store('ra_nogpu');
+  wLoad=loadWorker(gpu).catch(err=>{
+    if(W){W.terminate();W=null}
+    if(gpu&&err&&err.stall){                                 // remember: this phone can't do fast mode, use standard mode from now on
+      store('ra_nogpu',1);S.loadNote=null;toast('Fast mode is not working on this phone, using standard mode',4500);
+      return loadWorker(false);
+    }
+    throw err;
   }).catch(err=>{wLoad=null;if(W){W.terminate();W=null}throw err});
   return wLoad;
 }
