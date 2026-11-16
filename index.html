@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Readaloud">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#d9582b">
+<title>Readaloud</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{--bg:#faf8f5;--card:#fff;--ink:#1d1b19;--mute:#7a736b;--line:#e8e2da;--acc:#d9582b;--acc2:#fff3ec;--hl:#ffe3a3}
+@media(prefers-color-scheme:dark){:root{--bg:#161412;--card:#201d1a;--ink:#f1ece6;--mute:#9b9288;--line:#332f2a;--acc:#ff7a47;--acc2:#2c2019;--hl:#5a4414}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+#app{display:flex;flex-direction:column;height:100dvh;max-width:720px;margin:0 auto}
+header{padding:calc(env(safe-area-inset-top) + 12px) 18px 8px;display:flex;align-items:center;gap:10px}
+header h1{font-size:17px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:9px 14px;font-size:14px;font-weight:600;cursor:pointer}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+#empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:28px;gap:14px}
+#empty .logo{width:84px;height:84px;border-radius:24px;background:var(--acc2);display:grid;place-items:center;font-size:40px}
+#empty h2{margin:0;font-size:24px}
+#empty p{margin:0;color:var(--mute);max-width:340px;line-height:1.5;font-size:15px}
+#drop{border:2px dashed var(--line);border-radius:18px;padding:22px;width:100%;max-width:380px}
+#drop.over{border-color:var(--acc);background:var(--acc2)}
+#reader{display:none;flex:1;overflow-y:auto;padding:8px 22px 24px;font-family:Georgia,"Iowan Old Style",serif;font-size:19px;line-height:1.7}
+.s{cursor:pointer;border-radius:4px;padding:1px 0;transition:background .15s}
+.s.on{background:var(--hl)}
+.pgnote{font-family:-apple-system,sans-serif;font-size:13px;color:var(--mute);text-align:center;padding:14px}
+#player{display:none;background:var(--card);border-top:1px solid var(--line);padding:12px 18px calc(env(safe-area-inset-bottom) + 14px);box-shadow:0 -6px 24px rgba(0,0,0,.05)}
+.row{display:flex;align-items:center;gap:10px}
+.prog{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--mute);margin-bottom:8px}
+input[type=range]{flex:1;accent-color:var(--acc)}
+.ctrls{justify-content:center;gap:14px;margin:6px 0 10px}
+.ic{width:46px;height:46px;border-radius:50%;border:none;background:var(--acc2);color:var(--ink);font-size:18px;cursor:pointer}
+.ic.play{width:62px;height:62px;background:var(--acc);color:#fff;font-size:24px}
+.chips{display:flex;gap:6px;justify-content:center;margin-bottom:10px}
+.chip{border:1px solid var(--line);background:none;color:var(--ink);border-radius:999px;padding:6px 11px;font-size:13px;cursor:pointer}
+.chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.seg{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:3px;margin-bottom:8px}
+.seg button{flex:1;border:none;background:none;color:var(--mute);padding:7px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer}
+.seg button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+select{flex:1;min-width:0;padding:10px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:14px}
+#status{font-size:12px;color:var(--mute);text-align:center;min-height:16px;margin-bottom:6px}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 250px);background:var(--ink);color:var(--bg);padding:9px 14px;border-radius:12px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .25s;max-width:88%;text-align:center}
+#toast.show{opacity:.95}
+.load{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);place-items:center;color:#fff;font-weight:600}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1 id="title">Readaloud</h1>
+    <button class="btn" id="openBtn2" style="display:none">Open PDF</button>
+  </header>
+
+  <div id="empty">
+    <div class="logo">🎧</div>
+    <h2>Listen to any PDF</h2>
+    <p>Books, papers, reports. Natural-sounding voices that run on your phone, free. It reads page after page and remembers where you stopped.</p>
+    <div id="drop">
+      <button class="btn pri" id="openBtn" style="font-size:16px;padding:13px 22px">Choose a PDF</button>
+      <div style="color:var(--mute);font-size:13px;margin-top:10px">or drop a file here</div>
+    </div>
+  </div>
+
+  <div id="reader"></div>
+
+  <div id="player">
+    <div class="prog"><span id="pgL">p. 1</span><input type="range" id="pgR" min="1" max="1" value="1"><span id="pgT">/ 1</span></div>
+    <div id="status"></div>
+    <div class="row ctrls">
+      <button class="ic" id="prevPg" title="Previous page">⏮</button>
+      <button class="ic" id="prevS" title="Previous sentence">⏪</button>
+      <button class="ic play" id="play">▶</button>
+      <button class="ic" id="nextS" title="Next sentence">⏩</button>
+      <button class="ic" id="nextPg" title="Next page">⏭</button>
+    </div>
+    <div class="chips" id="speeds"></div>
+    <div class="seg"><button class="on" id="segNeural">Natural voices</button><button id="segDevice">Device voices</button></div>
+    <div class="row"><select id="voice"></select><button class="btn" id="preview">Preview</button></div>
+  </div>
+</div>
+<div id="toast"></div>
+<div class="load" id="load">Reading PDF…</div>
+<input type="file" id="file" accept="application/pdf,.pdf" hidden>
+
+<script type="module">
+const $=id=>document.getElementById(id);
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const synth=window.speechSynthesis;
+const S={pdf:null,name:'',page:1,sents:[],idx:0,playing:false,paused:false,rate:1,token:0,cache:{},
+  engine:'neural',neuralVoice:'af_heart',deviceVoice:null,tts:null,ctx:null,src:null,audio:new Map(),chain:Promise.resolve()};
+
+function toast(m,ms=3000){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove('show'),ms)}
+function store(k,v){try{if(v===undefined)return JSON.parse(localStorage.getItem(k));localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}}
+const status=m=>$('status').textContent=m||'';
+
+/* ---------- voices ---------- */
+const NEURAL_VOICES=[['af_heart','Heart · US woman'],['af_bella','Bella · US woman'],['af_nicole','Nicole · US woman (soft)'],['af_sarah','Sarah · US woman'],['am_michael','Michael · US man'],['am_fenrir','Fenrir · US man'],['am_puck','Puck · US man'],['bf_emma','Emma · UK woman'],['bf_isabella','Isabella · UK woman'],['bm_george','George · UK man'],['bm_fable','Fable · UK man']];
+let deviceVoices=[];
+function loadDeviceVoices(){
+  const v=synth.getVoices();if(!v.length)return;
+  const score=x=>(/siri|enhanced|premium|natural|neural/i.test(x.name)?-10:0)+(x.lang.startsWith('en')?-20:0);
+  deviceVoices=[...v].sort((a,b)=>score(a)-score(b)||a.name.localeCompare(b.name));
+  if(S.engine==='device')fillVoices();
+}
+if(synth){loadDeviceVoices();synth.onvoiceschanged=loadDeviceVoices}
+function fillVoices(){
+  const sel=$('voice');
+  if(S.engine==='neural'){
+    sel.innerHTML=NEURAL_VOICES.map(([id,l])=>`<option value="${id}">${l}</option>`).join('');
+    sel.value=S.neuralVoice;
+  }else{
+    sel.innerHTML=deviceVoices.map(v=>`<option value="${v.voiceURI}">${v.name} (${v.lang})</option>`).join('');
+    const saved=store('ra_dvoice');const pick=deviceVoices.find(v=>v.voiceURI===saved)||deviceVoices[0];
+    if(pick){sel.value=pick.voiceURI;S.deviceVoice=pick}
+  }
+}
+$('voice').onchange=e=>{
+  if(S.engine==='neural'){S.neuralVoice=e.target.value;store('ra_nvoice',S.neuralVoice);S.audio.clear()}
+  else{S.deviceVoice=deviceVoices.find(v=>v.voiceURI===e.target.value);store('ra_dvoice',e.target.value)}
+  if(S.playing||S.paused)restart();
+};
+function setEngine(e){
+  const was=S.playing||S.paused;stopAll();S.engine=e;store('ra_engine',e);
+  $('segNeural').classList.toggle('on',e==='neural');$('segDevice').classList.toggle('on',e==='device');
+  fillVoices();status('');if(was&&S.pdf){S.playing=true;setPlayIcon();startPlayback()}
+}
+$('segNeural').onclick=()=>setEngine('neural');$('segDevice').onclick=()=>setEngine('device');
+S.neuralVoice=store('ra_nvoice')||'af_heart';
+const savedEngine=store('ra_engine');if(savedEngine==='device')setEngine('device');else fillVoices();
+
+[0.8,1,1.2,1.5,1.8].forEach(r=>{const b=document.createElement('button');b.className='chip'+(r===1?' on':'');b.textContent=r+'×';
+  b.onclick=()=>{S.rate=r;[...$('speeds').children].forEach(c=>c.classList.toggle('on',c===b));S.audio.clear();if(S.playing||S.paused)restart()};$('speeds').appendChild(b)});
+
+/* ---------- neural engine (Kokoro, runs on the device) ---------- */
+async function ensureModel(){
+  if(S.tts)return S.tts;
+  status('Downloading voice model (about 90 MB, first time only)…');
+  const {KokoroTTS}=await import('https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm');
+  S.tts=await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX',{
+    dtype:'q8',device:'wasm',
+    progress_callback:p=>{if(p&&p.status==='progress'&&typeof p.progress==='number')status('Downloading voice model… '+Math.round(p.progress)+'%')}
+  });
+  status('');return S.tts;
+}
+function genAudio(text){
+  const key=S.neuralVoice+'|'+S.rate+'|'+text;
+  if(!S.audio.has(key)){
+    const voice=S.neuralVoice,speed=S.rate;
+    const p=S.chain=S.chain.catch(()=>{}).then(()=>S.tts.generate(text,{voice,speed}));
+    S.audio.set(key,p);
+    if(S.audio.size>40)S.audio.delete(S.audio.keys().next().value);
+  }
+  return S.audio.get(key);
+}
+function playBuffer(raw){
+  return new Promise(res=>{
+    const ctx=S.ctx,buf=ctx.createBuffer(1,raw.audio.length,raw.sampling_rate);
+    buf.copyToChannel(raw.audio,0);
+    const src=ctx.createBufferSource();src.buffer=buf;src.connect(ctx.destination);
+    S.src=src;src.onended=()=>res();src.start();
+  });
+}
+async function runNeural(my){
+  try{await ensureModel()}catch(err){console.error(err);status('');toast('Could not load the natural voice (needs internet the first time). Switching to device voice.',6000);if(my===S.token)setEngine('device');return}
+  while(my===S.token){
+    if(!S.sents.length){if(!await nextPage(my))return;continue}
+    const text=S.sents[S.idx];
+    status(S.ctx.state==='running'?'':'');
+    const buffering=setTimeout(()=>{if(my===S.token)status('Preparing audio…')},700);
+    let raw;try{raw=await genAudio(text)}catch(e){console.error(e);clearTimeout(buffering);S.idx++;continue}
+    clearTimeout(buffering);status('');
+    if(my!==S.token)return;
+    for(let k=1;k<=2;k++){const n=S.sents[S.idx+k];if(n)genAudio(n).catch(()=>{})}
+    mark();save();
+    await playBuffer(raw);
+    if(my!==S.token)return;
+    S.idx++;
+    if(S.idx>=S.sents.length&&!await nextPage(my))return;
+  }
+}
+async function nextPage(my){
+  let skipped=0;
+  while(S.page<S.pdf.numPages){
+    await gotoPage(S.page+1,0);if(my!==S.token)return false;
+    if(S.sents.length){if(skipped)toast(skipped+' page(s) without text were skipped');return true}
+    skipped++;
+  }
+  S.playing=false;S.paused=false;setPlayIcon();toast('Finished 🎉');return false;
+}
+
+/* ---------- device engine ---------- */
+function speakDevice(my){
+  if(!synth){toast('Speech is not supported here');return}
+  if(!S.sents.length){nextPage(my).then(ok=>{if(ok&&my===S.token)speakDevice(my)});return}
+  const u=new SpeechSynthesisUtterance(S.sents[S.idx]);
+  if(S.deviceVoice){u.voice=S.deviceVoice;u.lang=S.deviceVoice.lang}u.rate=S.rate;
+  u.onstart=()=>{if(my===S.token){mark();save()}};
+  u.onend=async()=>{if(my!==S.token)return;S.idx++;if(S.idx>=S.sents.length){if(!await nextPage(my))return}speakDevice(my)};
+  u.onerror=e=>{if(e.error!=='canceled'&&e.error!=='interrupted')toast('Speech error: '+e.error)};
+  if(synth.speaking||synth.pending){synth.cancel();setTimeout(()=>{if(my===S.token){synth.resume();synth.speak(u)}},60)}
+  else{synth.resume();synth.speak(u)}
+}
+
+/* ---------- playback control ---------- */
+function setPlayIcon(){$('play').textContent=S.playing?'⏸':'▶'}
+function stopAudio(){try{if(S.src){S.src.onended=null;S.src.stop()}}catch(e){}S.src=null;if(synth)synth.cancel()}
+function stopAll(){S.token++;stopAudio();S.playing=false;S.paused=false;if(S.ctx&&S.ctx.state==='suspended')S.ctx.resume();setPlayIcon();status('')}
+function startPlayback(){
+  S.token++;const my=S.token;stopAudio();S.paused=false;
+  if(S.ctx&&S.ctx.state==='suspended')S.ctx.resume();
+  if(S.engine==='neural')runNeural(my);else speakDevice(my);
+}
+function restart(){S.playing=true;setPlayIcon();startPlayback()}
+$('play').onclick=()=>{
+  if(!S.pdf)return;
+  if(!S.ctx){S.ctx=new (window.AudioContext||window.webkitAudioContext)()}   // created inside the tap so iOS allows sound
+  if(S.ctx.state==='suspended'&&!S.paused)S.ctx.resume();
+  if(S.playing){
+    if(S.engine==='neural'){S.ctx.suspend();S.paused=true;S.playing=false}else stopAll();
+    setPlayIcon();return;
+  }
+  if(S.paused&&S.engine==='neural'){S.ctx.resume();S.paused=false;S.playing=true;setPlayIcon();return}
+  S.playing=true;setPlayIcon();startPlayback();
+};
+$('nextS').onclick=()=>{if(S.idx<S.sents.length-1){S.idx++;mark();if(S.playing||S.paused)restart()}else jump(S.page+1)};
+$('prevS').onclick=()=>{if(S.idx>0){S.idx--;mark();if(S.playing||S.paused)restart()}else jump(S.page-1)};
+$('nextPg').onclick=()=>jump(S.page+1);$('prevPg').onclick=()=>jump(S.page-1);
+async function jump(n){const was=S.playing||S.paused;S.token++;stopAudio();await gotoPage(n,0);if(was){S.playing=true;setPlayIcon();startPlayback()}}
+$('pgR').oninput=e=>$('pgL').textContent='p. '+e.target.value;
+$('pgR').onchange=e=>jump(+e.target.value);
+$('preview').onclick=async()=>{
+  if(!S.ctx)S.ctx=new (window.AudioContext||window.webkitAudioContext)();S.ctx.resume();
+  const was=S.playing||S.paused;stopAll();
+  const t='Hi, this is how I sound when I read your document.';
+  if(S.engine==='neural'){try{await ensureModel();status('Preparing audio…');const raw=await genAudio(t);status('');await playBuffer(raw)}catch(e){status('');toast('Could not load the natural voice')}}
+  else{const u=new SpeechSynthesisUtterance(t);if(S.deviceVoice)u.voice=S.deviceVoice;u.rate=S.rate;synth.speak(u)}
+};
+
+/* ---------- PDF ---------- */
+$('openBtn').onclick=$('openBtn2').onclick=()=>$('file').click();
+$('file').onchange=e=>e.target.files[0]&&openFile(e.target.files[0]);
+const drop=$('drop');
+['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over')}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over')}));
+drop.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];f&&openFile(f)});
+
+async function openFile(f){
+  stopAll();$('load').style.display='grid';
+  try{
+    const buf=await f.arrayBuffer();
+    S.pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    S.name=f.name.replace(/\.pdf$/i,'');S.cache={};S.audio.clear();
+    $('title').textContent=S.name;
+    $('empty').style.display='none';$('reader').style.display='block';$('player').style.display='block';$('openBtn2').style.display='';
+    $('pgR').max=S.pdf.numPages;$('pgT').textContent='/ '+S.pdf.numPages;
+    const pos=store('ra_pos_'+S.name+'_'+S.pdf.numPages);
+    await gotoPage(pos&&pos.page?pos.page:1,pos&&pos.idx||0);
+    if(pos&&pos.page>1)toast('Resumed at page '+pos.page);
+  }catch(err){console.error(err);toast('Could not open this PDF: '+(err.message||err),5000)}
+  $('load').style.display='none';$('file').value='';
+}
+async function pageText(n){
+  if(S.cache[n]!==undefined)return S.cache[n];
+  const pg=await S.pdf.getPage(n);const tc=await pg.getTextContent();
+  let lines=[],cur='',lastY=null;
+  for(const it of tc.items){
+    if(!('str' in it))continue;
+    const y=it.transform?it.transform[5]:0;
+    if(lastY!==null&&Math.abs(y-lastY)>2&&cur){lines.push(cur);cur=''}
+    cur+=it.str;lastY=y;
+    if(it.hasEOL){lines.push(cur);cur='';lastY=null}
+  }
+  if(cur)lines.push(cur);
+  lines=lines.map(l=>l.replace(/\s+/g,' ').trim()).filter(l=>l&&!/^\d{1,4}$/.test(l)&&!/^[-–—•·.\s]+$/.test(l));
+  const t=lines.join('\n').replace(/(\w)-\n(?=[a-zß-ÿ])/g,'$1').replace(/\n/g,' ').replace(/\s+/g,' ').trim();
+  S.cache[n]=t;return t;
+}
+function splitSentences(t){
+  if(!t)return[];
+  const raw=t.match(/[^.!?…]+(?:[.!?…]+["'”’)\]]*|$)\s*/g)||[t];
+  const out=[];
+  for(let s of raw){s=s.trim();if(!s)continue;
+    while(s.length>240){let cut=s.lastIndexOf(', ',200);if(cut<60)cut=s.lastIndexOf(' ',200);if(cut<60)cut=200;out.push(s.slice(0,cut+1).trim());s=s.slice(cut+1).trim()}
+    if(s)out.push(s)}
+  return out.filter(s=>/[\p{L}\p{N}]/u.test(s));
+}
+async function gotoPage(n,idx=0){
+  S.page=Math.min(Math.max(1,n),S.pdf.numPages);
+  const t=await pageText(S.page);S.sents=splitSentences(t);S.idx=Math.min(idx,Math.max(0,S.sents.length-1));
+  const r=$('reader');r.innerHTML='';
+  if(!S.sents.length){
+    r.innerHTML='<div class="pgnote">Page '+S.page+' has no readable text layer (probably a scanned image), so it will be skipped.</div>';
+  }else{
+    const p=document.createElement('p');
+    S.sents.forEach((s,i)=>{const sp=document.createElement('span');sp.className='s';sp.textContent=s+' ';sp.dataset.i=i;
+      sp.onclick=()=>{if(!S.ctx)S.ctx=new (window.AudioContext||window.webkitAudioContext)();S.idx=i;mark();S.playing=true;setPlayIcon();startPlayback()};p.appendChild(sp)});
+    r.appendChild(p);
+  }
+  r.scrollTop=0;$('pgR').value=S.page;$('pgL').textContent='p. '+S.page;mark();save();
+}
+function mark(){document.querySelectorAll('.s').forEach(e=>e.classList.toggle('on',+e.dataset.i===S.idx));const e=document.querySelector('.s.on');if(e)e.scrollIntoView({block:'center',behavior:'smooth'})}
+function save(){if(S.pdf)store('ra_pos_'+S.name+'_'+S.pdf.numPages,{page:S.page,idx:S.idx})}
+window.addEventListener('pagehide',()=>{if(synth)synth.cancel()});
+</script>
+</body>
+</html>
